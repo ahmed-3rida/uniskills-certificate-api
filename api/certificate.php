@@ -1,4 +1,14 @@
 <?php
+// Start output buffering to catch any errors
+ob_start();
+
+// Disable error display (only log errors)
+ini_set('display_errors', '0');
+error_reporting(E_ALL & ~E_DEPRECATED & ~E_WARNING);
+
+// Clean any previous output
+ob_clean();
+
 // Enable CORS
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: POST, OPTIONS');
@@ -179,7 +189,13 @@ try {
     imagejpeg($image, null, $config['image']['quality']);
     $imageData = ob_get_clean();
     $base64 = base64_encode($imageData);
-    imagedestroy($image);
+    
+    // Clean up (imagedestroy is deprecated in PHP 8.5, but we'll suppress it)
+    @imagedestroy($image);
+    unset($image);
+
+    // Clear any buffered errors
+    ob_clean();
 
     // Return success response
     http_response_code(200);
@@ -187,11 +203,20 @@ try {
         'success' => true,
         'image' => 'data:image/jpeg;base64,' . $base64
     ]);
+    
+    // End output buffering
+    ob_end_flush();
 
 } catch (Exception $e) {
+    // Clean up if error
     if (isset($image) && $image) {
         @imagedestroy($image);
+        unset($image);
     }
+    
+    // Clear buffer
+    ob_clean();
+    
     sendError($e->getMessage(), 500);
 }
 ?>
