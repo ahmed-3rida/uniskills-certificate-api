@@ -9,6 +9,7 @@ class ArabicGlyphs {
     /**
      * Convert Arabic text to display glyphs
      * Handles mixed Arabic/English text properly with spaces
+     * NO REVERSAL - text flows naturally like English
      */
     public static function utf8Glyphs($text) {
         // If no Arabic, return as-is
@@ -23,19 +24,17 @@ class ArabicGlyphs {
         $processedSegments = [];
         foreach ($segments as $segment) {
             if ($segment['type'] === 'arabic') {
-                $processedSegments[] = self::shapeArabicText($segment['text']);
+                $processedSegments[] = self::shapeArabicText($segment['text'], false); // Don't reverse
             } elseif ($segment['type'] === 'space') {
                 // Keep space as-is
                 $processedSegments[] = ' ';
             } else {
-                // Keep non-Arabic as-is (don't reverse)
+                // Keep non-Arabic as-is
                 $processedSegments[] = $segment['text'];
             }
         }
         
-        // Reverse the order of segments for RTL display
-        $processedSegments = array_reverse($processedSegments);
-        
+        // DON'T reverse segments - keep natural flow like English
         return implode('', $processedSegments);
     }
     
@@ -101,9 +100,11 @@ class ArabicGlyphs {
     }
     
     /**
-     * Shape Arabic text (convert to proper glyphs and reverse)
+     * Shape Arabic text (convert to proper glyphs)
+     * @param string $text The Arabic text to shape
+     * @param bool $reverse Whether to reverse the text (default: false)
      */
-    private static function shapeArabicText($text) {
+    private static function shapeArabicText($text, $reverse = false) {
         // Arabic character forms
         $arabicChars = [
             // Letter => [isolated, final, initial, medial]
@@ -212,8 +213,10 @@ class ArabicGlyphs {
             $result[] = $arabicChars[$char][$form];
         }
         
-        // Reverse for RTL display
-        $result = array_reverse($result);
+        // Only reverse if requested (default: no reversal for natural flow)
+        if ($reverse) {
+            $result = array_reverse($result);
+        }
         
         return implode('', $result);
     }

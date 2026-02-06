@@ -35,35 +35,65 @@ function sendError($message, $code = 500) {
 }
 
 try {
-    // Check GD
-    if (!extension_loaded('gd')) {
-        sendError('GD Library not installed', 500);
-    }
+    // Check if this is a download request (GET with parameters)
+    if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['download'])) {
+        // Get parameters from URL
+        $studentName = isset($_GET['studentName']) ? trim($_GET['studentName']) : '';
+        $courseName = isset($_GET['courseName']) ? trim($_GET['courseName']) : '';
+        $instructorName = isset($_GET['instructorName']) ? trim($_GET['instructorName']) : '';
+        $date = isset($_GET['date']) ? trim($_GET['date']) : '';
+        $language = isset($_GET['language']) ? trim($_GET['language']) : 'en';
+        
+        // Validate
+        if (empty($studentName) || empty($courseName) || empty($instructorName) || empty($date)) {
+            sendError('Missing required parameters', 400);
+        }
+        
+        if (!in_array($language, ['ar', 'en'])) {
+            $language = 'en';
+        }
+        
+        // Generate certificate and return as downloadable image
+        $isDownload = true;
+    } else {
+        // Regular POST request
+        $isDownload = false;
+        
+        // Check GD
+        if (!extension_loaded('gd')) {
+            sendError('GD Library not installed', 500);
+        }
 
-    // Get request data
-    $rawInput = file_get_contents('php://input');
-    $data = json_decode($rawInput, true);
+        // Get request data
+        $rawInput = file_get_contents('php://input');
+        $data = json_decode($rawInput, true);
 
-    if (json_last_error() !== JSON_ERROR_NONE) {
-        sendError('Invalid JSON: ' . json_last_error_msg(), 400);
-    }
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            sendError('Invalid JSON: ' . json_last_error_msg(), 400);
+        }
 
-    // Validate required fields
-    $required = ['studentName', 'courseName', 'instructorName', 'date', 'language'];
-    foreach ($required as $field) {
-        if (!isset($data[$field]) || trim($data[$field]) === '') {
-            sendError("Missing field: $field", 400);
+        // Validate required fields
+        $required = ['studentName', 'courseName', 'instructorName', 'date', 'language'];
+        foreach ($required as $field) {
+            if (!isset($data[$field]) || trim($data[$field]) === '') {
+                sendError("Missing field: $field", 400);
+            }
+        }
+
+        $studentName = trim($data['studentName']);
+        $courseName = trim($data['courseName']);
+        $instructorName = trim($data['instructorName']);
+        $date = trim($data['date']);
+        $language = trim($data['language']);
+
+        if (!in_array($language, ['ar', 'en'])) {
+            sendError('Invalid language. Must be "ar" or "en"', 400);
         }
     }
 
-    $studentName = trim($data['studentName']);
-    $courseName = trim($data['courseName']);
-    $instructorName = trim($data['instructorName']);
-    $date = trim($data['date']);
-    $language = trim($data['language']);
-
-    if (!in_array($language, ['ar', 'en'])) {
-        sendError('Invalid language. Must be "ar" or "en"', 400);
+    // Check GD
+    if (!extension_loaded('gd')) {
+        sendError('GD Library not installed', 500);
     }
 
     // Load template
@@ -184,11 +214,10 @@ try {
         $isArabic
     );
 
-    // Output image as base64
+    // Generate image data
     ob_start();
     imagejpeg($image, null, $config['image']['quality']);
     $imageData = ob_get_clean();
-    $base64 = base64_encode($imageData);
     
     // Clean up (imagedestroy is deprecated in PHP 8.5, but we'll suppress it)
     @imagedestroy($image);
@@ -197,7 +226,18 @@ try {
     // Clear any buffered errors
     ob_clean();
 
-    // Return success response
+    // If download request, output image directly
+    if ($isDownload) {
+        header('Content-Type: image/jpeg');
+        header('Content-Disposition: attachment; filename="certificate.jpg"');
+        header('Content-Length: ' . strlen($imageData));
+        echo $imageData;
+        ob_end_flush();
+        exit();
+    }
+
+    // Otherwise return JSON with base64
+    $base64 = base64_encode($imageData);
     http_response_code(200);
     echo json_encode([
         'success' => true,
