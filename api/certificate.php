@@ -34,6 +34,73 @@ function sendError($message, $code = 500) {
     exit();
 }
 
+// Simple PDF generator - embeds JPG image in PDF
+function createSimplePDF($imagePath, $studentName) {
+    // Get image dimensions
+    list($width, $height) = getimagesize($imagePath);
+    
+    // Convert to PDF points (72 points per inch, assuming 96 DPI)
+    $pdfWidth = ($width * 72) / 96;
+    $pdfHeight = ($height * 72) / 96;
+    
+    // Read image data
+    $imageData = file_get_contents($imagePath);
+    $imageBase64 = base64_encode($imageData);
+    
+    // Create simple PDF structure
+    $pdf = "%PDF-1.4\n";
+    
+    // Object 1: Catalog
+    $pdf .= "1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n";
+    
+    // Object 2: Pages
+    $pdf .= "2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n";
+    
+    // Object 3: Page
+    $pdf .= "3 0 obj\n";
+    $pdf .= "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 {$pdfWidth} {$pdfHeight}] ";
+    $pdf .= "/Contents 4 0 R /Resources << /XObject << /Im1 5 0 R >> >> >>\n";
+    $pdf .= "endobj\n";
+    
+    // Object 4: Content stream
+    $content = "q\n{$pdfWidth} 0 0 {$pdfHeight} 0 0 cm\n/Im1 Do\nQ\n";
+    $contentLength = strlen($content);
+    $pdf .= "4 0 obj\n<< /Length {$contentLength} >>\nstream\n{$content}endstream\nendobj\n";
+    
+    // Object 5: Image
+    $pdf .= "5 0 obj\n";
+    $pdf .= "<< /Type /XObject /Subtype /Image /Width {$width} /Height {$height} ";
+    $pdf .= "/ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode ";
+    $pdf .= "/Length " . strlen($imageData) . " >>\n";
+    $pdf .= "stream\n";
+    $pdf .= $imageData;
+    $pdf .= "\nendstream\nendobj\n";
+    
+    // Cross-reference table
+    $xrefPos = strlen($pdf);
+    $pdf .= "xref\n0 6\n";
+    $pdf .= "0000000000 65535 f \n";
+    
+    // Calculate positions (simplified - in real PDF these need to be exact)
+    $positions = [
+        str_pad(strpos($pdf, "1 0 obj"), 10, "0", STR_PAD_LEFT),
+        str_pad(strpos($pdf, "2 0 obj"), 10, "0", STR_PAD_LEFT),
+        str_pad(strpos($pdf, "3 0 obj"), 10, "0", STR_PAD_LEFT),
+        str_pad(strpos($pdf, "4 0 obj"), 10, "0", STR_PAD_LEFT),
+        str_pad(strpos($pdf, "5 0 obj"), 10, "0", STR_PAD_LEFT),
+    ];
+    
+    foreach ($positions as $pos) {
+        $pdf .= $pos . " 00000 n \n";
+    }
+    
+    // Trailer
+    $pdf .= "trailer\n<< /Size 6 /Root 1 0 R >>\n";
+    $pdf .= "startxref\n{$xrefPos}\n%%EOF";
+    
+    return $pdf;
+}
+
 try {
     // Check if this is a download request (GET with parameters)
     if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['download'])) {
@@ -43,6 +110,7 @@ try {
         $instructorName = isset($_GET['instructorName']) ? trim($_GET['instructorName']) : '';
         $date = isset($_GET['date']) ? trim($_GET['date']) : '';
         $language = isset($_GET['language']) ? trim($_GET['language']) : 'en';
+        $format = isset($_GET['format']) ? strtolower(trim($_GET['format'])) : 'jpg';
         
         // Validate
         if (empty($studentName) || empty($courseName) || empty($instructorName) || empty($date)) {
@@ -53,11 +121,17 @@ try {
             $language = 'en';
         }
         
+        if (!in_array($format, ['jpg', 'pdf'])) {
+            $format = 'jpg';
+        }
+        
         // Generate certificate and return as downloadable image
         $isDownload = true;
+        $downloadFormat = $format;
     } else {
         // Regular POST request
         $isDownload = false;
+        $downloadFormat = 'jpg';
         
         // Check GD
         if (!extension_loaded('gd')) {
@@ -226,12 +300,38 @@ try {
     // Clear any buffered errors
     ob_clean();
 
-    // If download request, output image directly
+    // If download request, output file directly
     if ($isDownload) {
-        header('Content-Type: image/jpeg');
-        header('Content-Disposition: attachment; filename="certificate.jpg"');
-        header('Content-Length: ' . strlen($imageData));
-        echo $imageData;
+        // Create filename: StudentName_UniSkills_Certificate.ext
+        $cleanName = preg_replace('/[^a-zA-Z0-9\s\x{0600}-\x{06FF}]/u', '', $studentName);
+        $cleanName = preg_replace('/\s+/', '_', $cleanName);
+        $filename = $cleanName . '_UniSkills_Certificate';
+        
+        if ($downloadFormat === 'pdf') {
+            // Generate PDF
+            // Save image temporarily
+            $tempImagePath = sys_get_temp_dir() . '/cert_' . uniqid() . '.jpg';
+            file_put_contents($tempImagePath, $imageData);
+            
+            // Create PDF with FPDF-like approach (simple implementation)
+            // Since FPDF might not be available, we'll use a simple approach
+            // Convert JPG to PDF using basic PDF structure
+            $pdfData = createSimplePDF($tempImagePath, $studentName);
+            
+            // Clean up temp file
+            @unlink($tempImagePath);
+            
+            header('Content-Type: application/pdf');
+            header('Content-Disposition: attachment; filename="' . $filename . '.pdf"');
+            header('Content-Length: ' . strlen($pdfData));
+            echo $pdfData;
+        } else {
+            // Output JPG
+            header('Content-Type: image/jpeg');
+            header('Content-Disposition: attachment; filename="' . $filename . '.jpg"');
+            header('Content-Length: ' . strlen($imageData));
+            echo $imageData;
+        }
         ob_end_flush();
         exit();
     }
