@@ -303,9 +303,15 @@ try {
     // If download request, output file directly
     if ($isDownload) {
         // Create filename: StudentName_UniSkills_Certificate.ext
+        // Remove special characters but keep Arabic
         $cleanName = preg_replace('/[^a-zA-Z0-9\s\x{0600}-\x{06FF}]/u', '', $studentName);
         $cleanName = preg_replace('/\s+/', '_', $cleanName);
-        $filename = $cleanName . '_UniSkills_Certificate';
+        
+        // Create filename with app name
+        $baseFilename = $cleanName . '_UniSkills_Certificate';
+        
+        // For ASCII-safe fallback
+        $asciiFilename = 'UniSkills_Certificate';
         
         if ($downloadFormat === 'pdf') {
             // Generate PDF
@@ -321,14 +327,19 @@ try {
             // Clean up temp file
             @unlink($tempImagePath);
             
+            // Use RFC 5987 encoding for UTF-8 filenames
+            $encodedFilename = rawurlencode($baseFilename . '.pdf');
+            
             header('Content-Type: application/pdf');
-            header('Content-Disposition: attachment; filename="' . $filename . '.pdf"');
+            header('Content-Disposition: attachment; filename="' . $asciiFilename . '.pdf"; filename*=UTF-8\'\'' . $encodedFilename);
             header('Content-Length: ' . strlen($pdfData));
             echo $pdfData;
         } else {
             // Output JPG
+            $encodedFilename = rawurlencode($baseFilename . '.jpg');
+            
             header('Content-Type: image/jpeg');
-            header('Content-Disposition: attachment; filename="' . $filename . '.jpg"');
+            header('Content-Disposition: attachment; filename="' . $asciiFilename . '.jpg"; filename*=UTF-8\'\'' . $encodedFilename);
             header('Content-Length: ' . strlen($imageData));
             echo $imageData;
         }
