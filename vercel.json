@@ -1,0 +1,13 @@
+{
+  "functions": {
+    "api/certificate.php": {
+      "runtime": "vercel-php@0.6.0"
+    }
+  },
+  "routes": [
+    {
+      "src": "/api/certificate",
+      "dest": "/api/certificate.php"
+    }
+  ]
+}
